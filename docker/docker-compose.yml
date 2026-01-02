@@ -1,0 +1,35 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-food}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-food}
+      POSTGRES_DB: ${POSTGRES_DB:-food}
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+  cache:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    environment:
+      PORT: 8080
+    depends_on:
+      - db
+      - cache
+    command: sh -c "echo 'Backend container placeholder' && sleep 2"
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    environment:
+      PORT: 5173
+    command: sh -c "echo 'Frontend container placeholder' && sleep 2"
+volumes:
+  dbdata:

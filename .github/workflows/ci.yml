@@ -1,0 +1,42 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Go placeholder env
+        run: |
+          echo "No Go code yet; running 'go env' as placeholder"
+          go env
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.56
+      - name: Run golangci-lint (non-blocking for Phase 1)
+        continue-on-error: true
+        run: |
+          cd backend
+          golangci-lint run ./... || true
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Frontend lint (Prettier)
+        continue-on-error: true
+        run: |
+          cd frontend
+          npx --yes prettier -c "**/*.{ts,tsx,js,jsx,json,css,md}" || true
+      - name: Frontend lint (ESLint)
+        continue-on-error: true
+        run: |
+          cd frontend
+          npx --yes eslint "src/**/*.{ts,tsx,js,jsx}" || true

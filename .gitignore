@@ -1,0 +1,23 @@
+# General
+.DS_Store
+.env
+.env.*
+*.log
+.tmp/
+
+# Node
+node_modules/
+*.tsbuildinfo
+
+# Go
+bin/
+*.test
+coverage/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker
+**/dist/
+**/build/

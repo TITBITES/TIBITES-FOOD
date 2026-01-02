@@ -1,0 +1,5 @@
+# Placeholder frontend Dockerfile (no app code yet)
+FROM node:20-alpine AS base
+WORKDIR /app
+# In later phases, copy package.json and lockfile, install deps, then build.
+CMD ["sh", "-c", "echo Frontend image placeholder; sleep 1"]

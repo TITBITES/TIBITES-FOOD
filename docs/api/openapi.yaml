@@ -1,0 +1,420 @@
+openapi: 3.0.3
+info:
+  title: Food Delivery API (Single Business)
+  version: 0.1.0
+  description: >-
+    API-first contract skeleton for a single-business food delivery application.
+    Phase 1: No business logic; define high-level tags and reusable schemas.
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local development
+tags:
+  - name: Auth
+  - name: Users
+  - name: Menu
+  - name: Orders
+  - name: Payments
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new Customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+      responses:
+        '201':
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRefreshRequest'
+      responses:
+        '200':
+          description: Refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /menu/categories:
+    get:
+      tags: [Menu]
+      summary: List categories
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items: { $ref: '#/components/schemas/Category' }
+  /menu/items:
+    get:
+      tags: [Menu]
+      summary: List menu items
+      parameters:
+        - in: query
+          name: categoryId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/MenuItem' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+
+  /orders:
+    get:
+      security: [ { BearerAuth: [] } ]
+      tags: [Orders]
+      summary: List current customer's orders
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items: { $ref: '#/components/schemas/Order' }
+                  pagination: { $ref: '#/components/schemas/Pagination' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      security: [ { BearerAuth: [] } ]
+      tags: [Orders]
+      summary: Create order (delivery only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /orders/{orderId}:
+    get:
+      security: [ { BearerAuth: [] } ]
+      tags: [Orders]
+      summary: Get order by id
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /orders/{orderId}/payment-intents:
+    post:
+      security: [ { BearerAuth: [] } ]
+      tags: [Payments]
+      summary: Create a PaymentIntent for an order
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentIntentCreateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /orders/{orderId}/payment-intents/{paymentIntentId}:
+    get:
+      security: [ { BearerAuth: [] } ]
+      tags: [Payments]
+      summary: Get PaymentIntent by id
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: paymentIntentId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentIntent'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /payments/webhook/paystack:
+    post:
+      tags: [Payments]
+      summary: Paystack webhook endpoint (adapter)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Opaque provider payload (validated by adapter)
+      responses:
+        '200': { description: Acknowledge }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not Found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+    Address:
+      type: object
+      properties:
+        line1: { type: string }
+        line2: { type: string }
+        city: { type: string }
+        state: { type: string }
+        postalCode: { type: string }
+        country: { type: string }
+    OrderStatus:
+      type: string
+      enum: [PLACED, CONFIRMED, PREPARING, OUT_FOR_DELIVERY, COMPLETED, CANCELLED]
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [Customer, Admin] }
+    Customer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+        phone: { type: string }
+    Admin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        name: { type: string }
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        sortOrder: { type: integer }
+        isActive: { type: boolean }
+    MenuItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        categoryId: { type: string, format: uuid }
+        priceCents: { type: integer, description: 'Includes tax' }
+        currency: { type: string, description: 'ISO 4217; default NGN' }
+        isAvailable: { type: boolean }
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        menuItemId: { type: string, format: uuid }
+        nameSnapshot: { type: string }
+        quantity: { type: integer }
+        unitPriceCents: { type: integer }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        totalCents: { type: integer }
+        currency: { type: string }
+        deliveryAddressId: { type: string, format: uuid }
+        deliveryInstructions: { type: string }
+        tipCents: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+    PaymentIntent:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        provider: { type: string }
+        providerIntentId: { type: string }
+        status: { type: string }
+        clientSecret: { type: string, description: 'Client secret/token (e.g., Stripe). Optional depending on provider.' }
+        authorizationUrl: { type: string, format: uri, description: 'Hosted authorization URL (e.g., Paystack). Optional depending on provider.' }
+        amountCents: { type: integer }
+        currency: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuthRegisterRequest:
+      type: object
+      required: [name, email, password, phone]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+        phone: { type: string }
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    AuthRefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    AuthTokens:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+    OrderCreateRequest:
+      type: object
+      required: [items, deliveryAddress]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [menuItemId, quantity]
+            properties:
+              menuItemId: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+        deliveryAddress: { $ref: '#/components/schemas/Address' }
+        tipCents: { type: integer, minimum: 0, default: 0 }
+        currency: { type: string, default: 'NGN' }
+security:
+  - BearerAuth: []

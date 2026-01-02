@@ -1,0 +1,13 @@
+{
+  "name": "foodapp-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Frontend scaffold (React + TS via Vite to be added in later phase)",
+  "scripts": {
+    "lint": "npm run lint:prettier && npm run lint:eslint",
+    "lint:prettier": "prettier -c \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "lint:eslint": "eslint \"src/**/*.{ts,tsx,js,jsx}\" || true",
+    "build": "echo 'TODO: add build (vite)'",
+    "test": "echo 'TODO: add tests'"
+  }
+}
