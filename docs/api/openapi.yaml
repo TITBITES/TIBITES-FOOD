@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Food Delivery API (Single Business)
-  version: 0.1.0
+  version: 0.2.0
   description: >-
-    API-first contract skeleton for a single-business food delivery application.
-    Phase 1: No business logic; define high-level tags and reusable schemas.
+    API contract for a single-business food delivery application.
+    Phase 2: Contract locking only. Guest checkout allowed via orderSecret.
 servers:
   - url: https://api.example.com/v1
     description: Production
@@ -70,6 +70,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthTokens'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/admin/oauth2/start:
+    get:
+      tags: [Auth]
+      summary: Begin admin OAuth2 flow
+      responses:
+        '200':
+          description: Authorization URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuth2StartResponse'
+  /auth/admin/oauth2/callback:
+    get:
+      tags: [Auth]
+      summary: Admin OAuth2 callback
+      parameters:
+        - in: query
+          name: code
+          required: true
+          schema: { type: string }
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokens'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /users/me:
+    get:
+      security: [ { BearerAuth: [] } ]
+      tags: [Users]
+      summary: Get current authenticated user
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
         '401': { $ref: '#/components/responses/Unauthorized' }
 
   /menu/categories:
@@ -140,9 +187,8 @@ paths:
                   pagination: { $ref: '#/components/schemas/Pagination' }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
-      security: [ { BearerAuth: [] } ]
       tags: [Orders]
-      summary: Create order (delivery only)
+      summary: Create order (guest allowed)
       requestBody:
         required: true
         content:
@@ -155,14 +201,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Order'
+                $ref: '#/components/schemas/OrderCreatedResponse'
         '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /orders/{orderId}:
     get:
-      security: [ { BearerAuth: [] } ]
+      security:
+        - BearerAuth: []
+        - OrderSecret: []
       tags: [Orders]
-      summary: Get order by id
+      summary: Get order by id (auth or X-Order-Secret)
       parameters:
         - in: path
           name: orderId
@@ -176,13 +224,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/Order'
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /orders/{orderId}/payment-intents:
     post:
-      security: [ { BearerAuth: [] } ]
+      security:
+        - BearerAuth: []
+        - OrderSecret: []
       tags: [Payments]
-      summary: Create a PaymentIntent for an order
+      summary: Create a PaymentIntent for an order (auth or X-Order-Secret)
       parameters:
         - in: path
           name: orderId
@@ -203,12 +254,15 @@ paths:
                 $ref: '#/components/schemas/PaymentIntent'
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /orders/{orderId}/payment-intents/{paymentIntentId}:
     get:
-      security: [ { BearerAuth: [] } ]
+      security:
+        - BearerAuth: []
+        - OrderSecret: []
       tags: [Payments]
-      summary: Get PaymentIntent by id
+      summary: Get PaymentIntent by id (auth or X-Order-Secret)
       parameters:
         - in: path
           name: orderId
@@ -226,6 +280,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaymentIntent'
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /payments/webhook/paystack:
@@ -249,6 +304,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    OrderSecret:
+      type: apiKey
+      in: header
+      name: X-Order-Secret
   responses:
     BadRequest:
       description: Bad Request
@@ -260,8 +319,18 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Not Found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Conflict
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -351,18 +420,27 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        customerId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid, nullable: true }
         status: { $ref: '#/components/schemas/OrderStatus' }
         totalCents: { type: integer }
         currency: { type: string }
-        deliveryAddressId: { type: string, format: uuid }
-        deliveryInstructions: { type: string }
+        deliveryAddressId: { type: string, format: uuid, nullable: true }
+        deliveryInstructions: { type: string, nullable: true }
         tipCents: { type: integer, minimum: 0 }
+        deliveryEtaMinutes: { type: integer, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        courierName: { type: string, nullable: true }
+        deliveryTrackingUrl: { type: string, format: uri, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         items:
           type: array
           items: { $ref: '#/components/schemas/OrderItem' }
+    OrderCreatedResponse:
+      type: object
+      properties:
+        order: { $ref: '#/components/schemas/Order' }
+        orderSecret: { type: string, description: 'Opaque secret for guest access. Return only on create.' }
     PaymentIntent:
       type: object
       properties:
@@ -377,6 +455,17 @@ components:
         currency: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    PaymentIntentCreateRequest:
+      type: object
+      properties:
+        returnUrl: { type: string, format: uri, description: 'Client return URL for hosted flows' }
+        providerOptions:
+          type: object
+          additionalProperties: true
+    OAuth2StartResponse:
+      type: object
+      properties:
+        authorizationUrl: { type: string, format: uri }
     AuthRegisterRequest:
       type: object
       required: [name, email, password, phone]
@@ -401,20 +490,5 @@ components:
       properties:
         accessToken: { type: string }
         refreshToken: { type: string }
-    OrderCreateRequest:
-      type: object
-      required: [items, deliveryAddress]
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            required: [menuItemId, quantity]
-            properties:
-              menuItemId: { type: string, format: uuid }
-              quantity: { type: integer, minimum: 1 }
-        deliveryAddress: { $ref: '#/components/schemas/Address' }
-        tipCents: { type: integer, minimum: 0, default: 0 }
-        currency: { type: string, default: 'NGN' }
 security:
   - BearerAuth: []

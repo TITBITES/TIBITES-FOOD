@@ -1,0 +1,1 @@
+This package is intentionally left thin. HTTP logic is implemented under internal/httpapi for routing and middleware. Business logic belongs to services; none implemented in Phase 3.1.
