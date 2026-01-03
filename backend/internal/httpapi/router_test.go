@@ -4,10 +4,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"local.dev/foodapp/internal/adapters/tokens"
 )
 
 func TestAuthRequiredEndpoints(t *testing.T) {
-	r := NewRouter()
+	tokenSvc := tokens.NewJWTService("secret1", "secret2", time.Minute, time.Hour*24)
+	r := NewRouter(tokenSvc)
 
 	// GET /orders requires auth
 	req := httptest.NewRequest(http.MethodGet, "/orders", nil)
@@ -35,7 +39,8 @@ func TestAuthRequiredEndpoints(t *testing.T) {
 }
 
 func TestMenuEndpoints(t *testing.T) {
-	r := NewRouter()
+	tokenSvc := tokens.NewJWTService("secret1", "secret2", time.Minute, time.Hour*24)
+	r := NewRouter(tokenSvc)
 	req := httptest.NewRequest(http.MethodGet, "/menu/categories", nil)
 	rw := httptest.NewRecorder()
 	r.ServeHTTP(rw, req)

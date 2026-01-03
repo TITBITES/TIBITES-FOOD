@@ -3,9 +3,11 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	porttokens "local.dev/foodapp/internal/ports/tokens"
 )
 
 type contextKey string
@@ -33,7 +35,7 @@ func notImplemented(w http.ResponseWriter, _ *http.Request, code, message string
 }
 
 // NewRouter wires routes per OpenAPI 0.2.0. No business logic.
-func NewRouter() http.Handler {
+func NewRouter(tokenSvc porttokens.TokenService) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -60,71 +62,57 @@ func NewRouter() http.Handler {
 
 	// Users
 	r.Group(func(rm chi.Router) {
-		rm.Use(requireAuth())
+		rm.Use(requireAuthWith(tokenSvc))
 		rm.Get("/users/me", func(w http.ResponseWriter, r *http.Request) {
 			notImplemented(w, r, "NOT_IMPLEMENTED", "users/me not implemented")
 		})
 	})
 
 	// Menu (read-only)
-	r.Get("/menu/categories", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]interface{}{"categories": []interface{}{}})
-	})
-	r.Get("/menu/items", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items":      []interface{}{},
-			"pagination": map[string]int{"page": 1, "pageSize": 0, "total": 0},
-		})
-	})
+	r.Get("/menu/categories", handleListCategories)
+	r.Get("/menu/items", handleListMenuItems)
 
 	// Orders
 	r.Group(func(rm chi.Router) {
 		// GET /orders requires auth
-		rm.With(requireAuth()).Get("/orders", func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]interface{}{
-				"orders":     []interface{}{},
-				"pagination": map[string]int{"page": 1, "pageSize": 0, "total": 0},
-			})
-		})
+		rm.With(requireAuthWith(tokenSvc)).Get("/orders", handleListOrders)
 
 		// POST /orders (guest allowed)
-		rm.Post("/orders", func(w http.ResponseWriter, r *http.Request) {
-			notImplemented(w, r, "NOT_IMPLEMENTED", "create order not implemented")
-		})
+		rm.Post("/orders", handleCreateOrder)
 
 		// GET /orders/{orderId} (auth or order secret)
-		rm.With(authOrOrderSecret()).Get("/orders/{orderId}", func(w http.ResponseWriter, r *http.Request) {
-			notImplemented(w, r, "NOT_IMPLEMENTED", "get order not implemented")
-		})
+		rm.With(authOrOrderSecretWith(tokenSvc)).Get("/orders/{orderId}", handleGetOrder)
 	})
 
 	// Payments
 	r.Group(func(rm chi.Router) {
 		// Create PI (auth or order secret)
-		rm.With(authOrOrderSecret()).Post("/orders/{orderId}/payment-intents", func(w http.ResponseWriter, r *http.Request) {
-			notImplemented(w, r, "NOT_IMPLEMENTED", "create payment intent not implemented")
-		})
+		rm.With(authOrOrderSecretWith(tokenSvc)).Post("/orders/{orderId}/payment-intents", handleCreatePaymentIntent)
 		// Get PI (auth or order secret)
-		rm.With(authOrOrderSecret()).Get("/orders/{orderId}/payment-intents/{paymentIntentId}", func(w http.ResponseWriter, r *http.Request) {
-			notImplemented(w, r, "NOT_IMPLEMENTED", "get payment intent not implemented")
-		})
+		rm.With(authOrOrderSecretWith(tokenSvc)).Get("/orders/{orderId}/payment-intents/{paymentIntentId}", handleGetPaymentIntent)
 		// Webhook (no auth)
-		rm.Post("/payments/webhook/paystack", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("{}"))
-		})
+		rm.Post("/payments/webhook/paystack", handlePaymentWebhook)
 	})
 
 	return r
 }
 
-// requireAuth enforces presence of Authorization: Bearer <token> header only (no verification).
-func requireAuth() func(http.Handler) http.Handler {
+// requireAuth validates Authorization: Bearer <token> using TokenService.
+func requireAuthWith(tokenSvc porttokens.TokenService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			auth := r.Header.Get("Authorization")
 			if auth == "" {
 				writeJSON(w, http.StatusUnauthorized, Error{Code: "UNAUTHORIZED", Message: "missing Authorization header"})
+				return
+			}
+			if !strings.HasPrefix(auth, "Bearer ") {
+				writeJSON(w, http.StatusUnauthorized, Error{Code: "UNAUTHORIZED", Message: "invalid Authorization header"})
+				return
+			}
+			tok := strings.TrimPrefix(auth, "Bearer ")
+			if _, _, err := tokenSvc.ValidateAccessToken(r.Context(), tok); err != nil {
+				writeJSON(w, http.StatusUnauthorized, Error{Code: "UNAUTHORIZED", Message: "invalid or expired token"})
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -147,7 +135,7 @@ func orderSecretMiddleware() func(http.Handler) http.Handler {
 }
 
 // authOrOrderSecret allows either Authorization or X-Order-Secret. If neither, returns 401.
-func authOrOrderSecret() func(http.Handler) http.Handler {
+func authOrOrderSecretWith(tokenSvc porttokens.TokenService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			auth := r.Header.Get("Authorization")
@@ -155,6 +143,13 @@ func authOrOrderSecret() func(http.Handler) http.Handler {
 			if auth == "" && secret == "" {
 				writeJSON(w, http.StatusUnauthorized, Error{Code: "UNAUTHORIZED", Message: "missing Authorization or X-Order-Secret"})
 				return
+			}
+			if auth != "" && strings.HasPrefix(auth, "Bearer ") {
+				tok := strings.TrimPrefix(auth, "Bearer ")
+				if _, _, err := tokenSvc.ValidateAccessToken(r.Context(), tok); err != nil {
+					writeJSON(w, http.StatusUnauthorized, Error{Code: "UNAUTHORIZED", Message: "invalid or expired token"})
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})
