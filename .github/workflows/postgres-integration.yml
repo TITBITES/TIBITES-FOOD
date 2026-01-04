@@ -1,0 +1,71 @@
+name: Go + Postgres Integration
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: food
+          POSTGRES_PASSWORD: food
+          POSTGRES_DB: food
+        options: >-
+          --health-cmd="pg_isready -U food -d food"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read Go version from backend/go.mod
+        id: goversion
+        run: |
+          echo "GO_VERSION=$(grep '^go ' backend/go.mod | awk '{print $2}')" >> $GITHUB_ENV
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Wait for Postgres to be healthy
+        run: |
+          for i in $(seq 1 60); do
+            if pg_isready -h localhost -p 5432 -U food -d food >/dev/null 2>&1; then
+              echo "Postgres is ready"
+              exit 0
+            fi
+            echo "Waiting for Postgres to be ready... ($i)"
+            sleep 1
+          done
+          echo "Postgres did not become ready in time" >&2
+          exit 1
+
+      - name: Set DATABASE_URL
+        run: echo "DATABASE_URL=postgres://food:food@localhost:5432/food?sslmode=disable" >> $GITHUB_ENV
+
+      - name: Build
+        working-directory: backend
+        run: go build ./...
+
+      - name: (skipped) Run DB migrations
+        working-directory: backend
+        run: |
+          echo "Migrations are intentionally not run in CI by this workflow"
+
+      - name: Unit tests
+        working-directory: backend
+        run: go test ./...
+
+      - name: Postgres integration tests
+        working-directory: backend
+        run: go test -tags=postgres_integration ./internal/adapters/postgres -v
